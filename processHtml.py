@@ -4,6 +4,7 @@ import os
 import shutil
 import mimetypes
 import gzip
+import hashlib
 import json
 import re
 
@@ -117,6 +118,8 @@ class HtmlHeaderProcessor:
 
         stinfo = os.stat(binary_path)
         data = gzip.compress(raw, mtime=stinfo.st_mtime)
+        # digest of the served content (not the gzip stream, which embeds the file's mtime)
+        info["digest"] = hashlib.sha256(raw).hexdigest()
 
         with header_path.open(mode="a", encoding="utf-8") as header_file:
             # Derive a unique, valid C identifier from the full path relative to HTML_DIR, extension
@@ -174,10 +177,19 @@ class HtmlHeaderProcessor:
             processed_info = self._process_binary_file(file_path, binary_header, info)
             file_list.append(processed_info)
 
+        # ETag for all embedded web assets: changes whenever any of them changes. The git revision used
+        # before stayed the same across uncommitted ("-dirty") builds, so browsers kept a stale page.
+        assets_hash = hashlib.sha256()
+        for item in file_list:
+            assets_hash.update(item["uri"].encode())
+            assets_hash.update(item["digest"].encode())
+        web_assets_etag = assets_hash.hexdigest()[:16]
+
         with binary_header.open(mode="a", encoding="utf-8") as f:
             f.write("#pragma once\n")
             f.write("#include <Arduino.h>\n")
             f.write("#include <functional>\n\n")
+            f.write(f'constexpr const char webAssetsEtag[] = "\\"{web_assets_etag}\\"";\n\n')
             f.write("using RouteRegistrationHandler = std::function<void(const String& uri, const String& contentType, const uint8_t * content, size_t len)>;\n\n")
             f.write("class WWWData {\n    public:\n        static void registerRoutes(RouteRegistrationHandler handler) {\n")
             for item in file_list:

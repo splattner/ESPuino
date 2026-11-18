@@ -37,6 +37,7 @@
 		"mqtt": "MQTT",
 		"ftp": "FTP",
 		"bluetooth": "Bluetooth",
+		"sendspin": "Sendspin",
 		"general": "Général",
 		"updates": "Mises à jour",
 		"tools": "Outils",
@@ -527,6 +528,31 @@
 		"connection": {
 			"connected": "Connecté à : {{device}}",
 			"disconnected": "Non connecté"
+		}
+	},
+	"sendspin": {
+		"status": {
+			"title": "Récepteur Sendspin",
+			"notRunning": "Sendspin n'est pas actif (disponible uniquement en mode normal)",
+			"disconnected": "En attente d'un serveur Sendspin (p. ex. Music Assistant)",
+			"connectedPaired": "Connecté à {{server}} (appairé)",
+			"connectedUnpaired": "Connecté à {{server}} (non appairé)",
+			"playing": "Lecture",
+			"paused": "En pause"
+		},
+		"pairing": {
+			"title": "Appairage",
+			"explanation": "Pour qu'un serveur Sendspin puisse jouer sur cet ESPuino, saisissez ce jeton d'appairage dans le serveur (dans Music Assistant : dans les réglages du lecteur ESPuino). Toute personne connaissant le jeton peut appairer : ne le partagez qu'avec des serveurs de confiance.",
+			"copy": "Copier",
+			"copied": "Jeton d'appairage copié",
+			"copyManually": "Échec de la copie : le jeton est sélectionné, copiez-le manuellement (Ctrl+C)",
+			"clientId": "ID client"
+		},
+		"settings": {
+			"title": "Réglages Sendspin",
+			"unpaired": "Autoriser l'accès sans appairage",
+			"unpairedExp": "Si activé, tout serveur Sendspin de votre réseau peut jouer sur cet ESPuino sans appairage préalable. Ne l'activez que si vous faites confiance à tous les appareils de votre réseau.",
+			"save": "Enregistrer les réglages Sendspin"
 		}
 	},
 	"general": {

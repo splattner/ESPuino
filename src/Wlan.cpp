@@ -9,6 +9,7 @@
 #include "Mqtt.h"
 #include "Queues.h"
 #include "RotaryEncoder.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Web.h"
 #include "esp_mac.h"
@@ -537,6 +538,9 @@ void handleWifiStateConnectionSuccess() {
 	if (hostname) {
 		if (MDNS.begin(hostname.c_str())) {
 			MDNS.addService("http", "tcp", 80);
+	#ifdef SENDSPIN_ENABLE
+			Sendspin_AdvertiseMdns();
+	#endif
 			Log_Printf(LOGLEVEL_NOTICE, mDNSStarted, hostname.c_str());
 		} else {
 			Log_Printf(LOGLEVEL_ERROR, mDNSFailed, hostname.c_str());

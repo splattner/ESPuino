@@ -25,6 +25,7 @@
 #include "RfidPn5180.h"
 #include "RotaryEncoder.h"
 #include "SdCard.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Wlan.h"
 #include "freertos/ringbuf.h"
@@ -93,6 +94,7 @@ static void handlePostWiFiConfig(AsyncWebServerRequest *request, JsonVariant &js
 static void handleCoverImageRequest(AsyncWebServerRequest *request);
 static void handleBluetoothScanRequest(AsyncWebServerRequest *request);
 static void handleBluetoothStatusRequest(AsyncWebServerRequest *request);
+static void handleSendspinStatusRequest(AsyncWebServerRequest *request);
 static void handleBluetoothResultsRequest(AsyncWebServerRequest *request);
 static void handleBluetoothConnectRequest(AsyncWebServerRequest *request, JsonVariant &json);
 static void handleWiFiScanRequest(AsyncWebServerRequest *request);
@@ -211,7 +213,7 @@ static void serveProgmemFiles(const String &uri, const String &contentType, cons
 	wServer.on(uri.c_str(), HTTP_GET, [contentType, content, len](AsyncWebServerRequest *request) {
 		AsyncWebServerResponse *response;
 
-		const bool etag = request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(gitRevShort);
+		const bool etag = request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(webAssetsEtag);
 		if (etag) {
 			response = request->beginResponse(304);
 		} else {
@@ -220,10 +222,10 @@ static void serveProgmemFiles(const String &uri, const String &contentType, cons
 		}
 		// no-cache (not "no-store"): browser may keep a local copy, but must always revalidate via ETag
 		// before using it. That way repeat loads cost only a small conditional request (304 if unchanged),
-		// while a firmware update (new gitRevShort) is picked up immediately instead of serving a stale
+		// while changed web assets (new webAssetsEtag) are picked up immediately instead of serving a stale
 		// cached copy for the "immutable"/long-max-age duration.
 		response->addHeader("Cache-Control", "no-cache");
-		response->addHeader("ETag", gitRevShort); // use git revision as digest
+		response->addHeader("ETag", webAssetsEtag); // hash of all embedded web assets (processHtml.py)
 		request->send(response);
 	});
 }
@@ -431,11 +433,11 @@ void webserverStart(void) {
 		wServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
 			AsyncWebServerResponse *response;
 
-			// ETag is tied to the firmware build (gitRevShort), so it must only gate the firmware-embedded
+			// ETag is the hash of the firmware-embedded assets (webAssetsEtag), so it must only gate the firmware-embedded
 			// management_html_BIN response below - never the user-provided SD-card index.htm, whose content
 			// can change independently of the firmware (a stale 304 would then serve an outdated cached
 			// copy of the user's own custom page).
-			const bool etag = request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(gitRevShort);
+			const bool etag = request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(webAssetsEtag);
 
 			// management.html's frontend libraries are embedded rather than loaded from a CDN (see
 			// html/vendor/), so it no longer *needs* internet access - but AP-mode is typically reached
@@ -453,7 +455,7 @@ void webserverStart(void) {
 					response = request->beginResponse(200, "text/html", (const uint8_t *) management_html_BIN, sizeof(management_html_BIN));
 					response->addHeader("Content-Encoding", "gzip");
 					response->addHeader("Cache-Control", "no-cache");
-					response->addHeader("ETag", gitRevShort);
+					response->addHeader("ETag", webAssetsEtag);
 				}
 #else
 				if (gFSystem.exists("/.html/index.htm")) {
@@ -464,7 +466,7 @@ void webserverStart(void) {
 					response = request->beginResponse(200, "text/html", (const uint8_t *) management_html_BIN, sizeof(management_html_BIN));
 					response->addHeader("Content-Encoding", "gzip");
 					response->addHeader("Cache-Control", "no-cache");
-					response->addHeader("ETag", gitRevShort);
+					response->addHeader("ETag", webAssetsEtag);
 				}
 #endif
 			} else {
@@ -475,7 +477,7 @@ void webserverStart(void) {
 					response = request->beginResponse(200, "text/html", (const uint8_t *) accesspoint_html_BIN, sizeof(accesspoint_html_BIN));
 					response->addHeader("Content-Encoding", "gzip");
 					response->addHeader("Cache-Control", "no-cache");
-					response->addHeader("ETag", gitRevShort);
+					response->addHeader("ETag", webAssetsEtag);
 				}
 			}
 			request->send(response);
@@ -674,6 +676,7 @@ void webserverStart(void) {
 		wServer.on("/bluetoothscan", HTTP_GET, handleBluetoothScanRequest);
 		wServer.on("/bluetoothresults", HTTP_GET, handleBluetoothResultsRequest);
 		wServer.on("/bluetoothstatus", HTTP_GET, handleBluetoothStatusRequest);
+		wServer.on("/sendspinstatus", HTTP_GET, handleSendspinStatusRequest);
 		wServer.addHandler(new AsyncCallbackJsonWebHandler("/bluetoothconnect", handleBluetoothConnectRequest));
 
 		// ESPuino logo: user-provided SD override takes precedence, otherwise fall back to the default
@@ -692,13 +695,13 @@ void webserverStart(void) {
 			};
 #endif
 			AsyncWebServerResponse *response;
-			if (request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(gitRevShort)) {
+			if (request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(webAssetsEtag)) {
 				response = request->beginResponse(304);
 			} else {
 				response = request->beginResponse(200, "image/webp", (const uint8_t *) vendor_branding_logo_webp_BIN, sizeof(vendor_branding_logo_webp_BIN));
 				response->addHeader("Content-Encoding", "gzip");
 				response->addHeader("Cache-Control", "no-cache");
-				response->addHeader("ETag", gitRevShort);
+				response->addHeader("ETag", webAssetsEtag);
 			}
 			request->send(response);
 		});
@@ -711,13 +714,13 @@ void webserverStart(void) {
 			};
 #endif
 			AsyncWebServerResponse *response;
-			if (request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(gitRevShort)) {
+			if (request->hasHeader("If-None-Match") && request->getHeader("If-None-Match")->value().equals(webAssetsEtag)) {
 				response = request->beginResponse(304);
 			} else {
 				response = request->beginResponse(200, "image/x-icon", (const uint8_t *) vendor_branding_favicon_ico_BIN, sizeof(vendor_branding_favicon_ico_BIN));
 				response->addHeader("Content-Encoding", "gzip");
 				response->addHeader("Cache-Control", "no-cache");
-				response->addHeader("ETag", gitRevShort);
+				response->addHeader("ETag", webAssetsEtag);
 			}
 			request->send(response);
 		});
@@ -1159,6 +1162,11 @@ WebsocketCodeType JSONToSettings(JsonObject doc) {
 			return WebsocketCodeType::Error;
 		}
 	}
+#ifdef SENDSPIN_ENABLE
+	if (doc["sendspin"].is<JsonObject>()) {
+		Sendspin_SetUnpairedAccess(doc["sendspin"]["unpairedAccess"] | false);
+	}
+#endif
 	if (doc["bluetooth"].is<JsonObject>()) {
 		// bluetooth settings
 		const char *_btDeviceName = doc["bluetooth"]["deviceName"];
@@ -1618,6 +1626,47 @@ static void settingsToJSON(JsonObject obj, const String section) {
 		}
 	}
 #endif
+// Sendspin (live status comes from /sendspinstatus)
+#ifdef SENDSPIN_ENABLE
+	if ((section == "") || (section == "sendspin")) {
+		JsonObject sendspinObj = obj["sendspin"].to<JsonObject>();
+		sendspinObj["unpairedAccess"] = Sendspin_GetUnpairedAccess();
+	}
+#endif
+}
+
+#ifdef SENDSPIN_ENABLE
+// While a Sendspin stream is the audio source, the player view shows its track instead of the local one.
+static bool Web_GetSendspinTrack(SendspinStatus &sendspin) {
+	if (!Sendspin_IsSource()) {
+		return false;
+	}
+	Sendspin_GetStatus(sendspin);
+	return true;
+}
+
+static String Web_SendspinTrackName(const SendspinStatus &sendspin) {
+	if (sendspin.title.length() == 0) {
+		return sendspin.serverName.length() > 0 ? "Sendspin: " + sendspin.serverName : String("Sendspin");
+	}
+	return sendspin.artist.length() > 0 ? sendspin.artist + " - " + sendspin.title : sendspin.title;
+}
+#endif
+
+// Position of the current track for the player view (local playback or Sendspin)
+static void Web_GetTrackProgress(uint8_t &posPercent, uint32_t &timeSec, uint32_t &durationSec) {
+#ifdef SENDSPIN_ENABLE
+	SendspinStatus sendspin;
+	if (Web_GetSendspinTrack(sendspin)) {
+		timeSec = sendspin.progressMs / 1000;
+		durationSec = sendspin.durationMs / 1000;
+		posPercent = (sendspin.durationMs > 0) ? std::min<uint32_t>(100, (uint64_t) sendspin.progressMs * 100 / sendspin.durationMs) : 0;
+		return;
+	}
+#endif
+	posPercent = gPlayProperties.currentRelPos;
+	timeSec = AudioPlayer_GetCurrentTime();
+	durationSec = AudioPlayer_GetFileDuration();
 }
 
 // handle get info
@@ -1893,13 +1942,34 @@ void Web_SendWebsocketData(uint32_t client, WebsocketCodeType code) {
 		object["opmode"] = System_GetOperationMode();
 	} else if (code == WebsocketCodeType::TrackInfo) {
 		JsonObject entry = object["trackinfo"].to<JsonObject>();
-		entry["pausePlay"] = gPlayProperties.pausePlay;
-		entry["currentTrackNumber"] = gPlayProperties.currentTrackNumber + 1;
-		entry["numberOfTracks"] = (gPlayProperties.playlist) ? gPlayProperties.playlist->size() : 0;
 		entry["volume"] = AudioPlayer_GetCurrentVolume();
-		entry["name"] = gPlayProperties.title;
-		entry["posPercent"] = gPlayProperties.currentRelPos;
-		entry["playMode"] = gPlayProperties.playMode;
+#ifdef SENDSPIN_ENABLE
+		SendspinStatus sendspin;
+		if (Web_GetSendspinTrack(sendspin)) {
+			// the page enables next/previous for this source and shows the server's cover art
+			entry["source"] = "sendspin";
+			entry["pausePlay"] = !sendspin.playing;
+			entry["currentTrackNumber"] = 1;
+			entry["numberOfTracks"] = 1;
+			entry["name"] = Web_SendspinTrackName(sendspin);
+			entry["coverUrl"] = sendspin.artworkUrl;
+			uint8_t posPercent;
+			uint32_t timeSec, durationSec;
+			Web_GetTrackProgress(posPercent, timeSec, durationSec);
+			entry["posPercent"] = posPercent;
+			entry["time"] = timeSec;
+			entry["duration"] = durationSec;
+		} else
+#endif
+		{
+			entry["source"] = "local";
+			entry["pausePlay"] = gPlayProperties.pausePlay;
+			entry["currentTrackNumber"] = gPlayProperties.currentTrackNumber + 1;
+			entry["numberOfTracks"] = (gPlayProperties.playlist) ? gPlayProperties.playlist->size() : 0;
+			entry["name"] = gPlayProperties.title;
+			entry["posPercent"] = gPlayProperties.currentRelPos;
+			entry["playMode"] = gPlayProperties.playMode;
+		}
 	} else if (code == WebsocketCodeType::CoverImg) {
 		object["coverimg"] = "coverimg";
 	} else if (code == WebsocketCodeType::Volume) {
@@ -1912,9 +1982,12 @@ void Web_SendWebsocketData(uint32_t client, WebsocketCodeType code) {
 		settingsToJSON(entry, "ssids");
 	} else if (code == WebsocketCodeType::TrackProgress) {
 		JsonObject entry = object["trackProgress"].to<JsonObject>();
-		entry["posPercent"] = gPlayProperties.currentRelPos;
-		entry["time"] = AudioPlayer_GetCurrentTime();
-		entry["duration"] = AudioPlayer_GetFileDuration();
+		uint8_t posPercent;
+		uint32_t timeSec, durationSec;
+		Web_GetTrackProgress(posPercent, timeSec, durationSec);
+		entry["posPercent"] = posPercent;
+		entry["time"] = timeSec;
+		entry["duration"] = durationSec;
 	} else if (code == WebsocketCodeType::BluetoothScanInProgress) {
 		object["bt_scan"] = "in_progress";
 	} else if (code == WebsocketCodeType::BluetoothScanComplete) {
@@ -2486,10 +2559,13 @@ void explorerHandleAudioRequest(AsyncWebServerRequest *request) {
 
 // Handles track progress requests
 void handleTrackProgressRequest(AsyncWebServerRequest *request) {
+	uint8_t posPercent;
+	uint32_t timeSec, durationSec;
+	Web_GetTrackProgress(posPercent, timeSec, durationSec);
 	String json = "{\"trackProgress\":{";
-	json += "\"posPercent\":" + String(gPlayProperties.currentRelPos);
-	json += ",\"time\":" + String(AudioPlayer_GetCurrentTime());
-	json += ",\"duration\":" + String(AudioPlayer_GetFileDuration());
+	json += "\"posPercent\":" + String(posPercent);
+	json += ",\"time\":" + String(timeSec);
+	json += ",\"duration\":" + String(durationSec);
 	json += "}}";
 	request->send(200, "application/json", json);
 }
@@ -3249,6 +3325,36 @@ static void handleBluetoothStatusRequest(AsyncWebServerRequest *request) {
 	request->send(response);
 #else
 	request->send(200, "application/json", "{\"connected\":false}");
+#endif
+}
+
+// Returns the Sendspin receiver's state for the Sendspin tab (connection, pairing token, current track).
+static void handleSendspinStatusRequest(AsyncWebServerRequest *request) {
+#ifdef SENDSPIN_ENABLE
+	SendspinStatus sendspin;
+	Sendspin_GetStatus(sendspin);
+
+	AsyncJsonResponse *response = new AsyncJsonResponse(false);
+	JsonObject object = response->getRoot();
+	object["running"] = sendspin.running;
+	object["connected"] = sendspin.connected;
+	object["paired"] = sendspin.paired;
+	object["playing"] = sendspin.playing;
+	object["isSource"] = sendspin.isSource;
+	object["unpairedAccess"] = sendspin.unpairedAccess;
+	object["serverName"] = sendspin.serverName;
+	object["title"] = sendspin.title;
+	object["artist"] = sendspin.artist;
+	object["album"] = sendspin.album;
+	object["artworkUrl"] = sendspin.artworkUrl;
+	object["progressMs"] = sendspin.progressMs;
+	object["durationMs"] = sendspin.durationMs;
+	object["clientId"] = sendspin.clientId;
+	object["pairingToken"] = sendspin.pairingToken;
+	response->setLength();
+	request->send(response);
+#else
+	request->send(200, "application/json", "{\"running\":false}");
 #endif
 }
 

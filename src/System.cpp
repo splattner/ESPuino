@@ -15,6 +15,7 @@
 #include "Power.h"
 #include "Rfid.h"
 #include "SdCard.h"
+#include "Sendspin.h"
 #include "Web.h"
 #include "Wlan.h"
 #include "esp_system.h"
@@ -253,6 +254,9 @@ void System_SleepHandler(void) {
 
 // prepare power down
 void System_PreparePowerDown(void) {
+#ifdef SENDSPIN_ENABLE
+	Sendspin_Exit(); // say goodbye to the server and release the speaker before the audio player goes
+#endif
 	Web_Exit();
 	AudioPlayer_Exit();
 

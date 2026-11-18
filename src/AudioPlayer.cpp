@@ -18,6 +18,7 @@
 #include "Rfid.h"
 #include "RotaryEncoder.h"
 #include "SdCard.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "VolumeCurveLut.h"
 #include "Web.h"
@@ -1577,6 +1578,9 @@ void AudioPlayer_SetVolume(const int32_t _newVolume) {
 		if (System_GetOperationMode() == OPMODE_BLUETOOTH_SOURCE) {
 			Bluetooth_SetVolume(_volume);
 		}
+#ifdef SENDSPIN_ENABLE
+		Sendspin_OnLocalVolumeChanged(_volume);
+#endif
 		Web_SendWebsocketData(0, WebsocketCodeType::Volume);
 #ifdef MQTT_ENABLE
 		publishMqtt(topicLoudness, static_cast<uint32_t>(_volume), false);
@@ -1879,6 +1883,11 @@ std::optional<Playlist *> AudioPlayer_ReturnPlaylistFromWebstream(const char *_w
 
 // Adds new control-command to control-queue (any task)
 void AudioPlayer_SetTrackControl(const uint8_t new_trackCommand) {
+#ifdef SENDSPIN_ENABLE
+	if (Sendspin_HandleTrackCommand(new_trackCommand)) {
+		return; // a Sendspin stream is the source: play/pause, next, previous, stop go to its server
+	}
+#endif
 	if (AudioPlayer_TrackCommandQueue == NULL) {
 		trackCommand = new_trackCommand; // before AudioPlayer_Init()
 		return;

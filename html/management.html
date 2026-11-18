@@ -717,6 +717,9 @@
 			<a class="nav-item nav-link main-tab-item" id="nav-bt-tab" data-visible="false" data-bs-toggle="tab"
 				href="#nav-bt" data-bs-target="#nav-bt" role="tab" aria-controls="nav-bt" aria-selected="false"><i
 					class="fab fa-bluetooth"></i>&nbsp;<span data-i18n="nav.bluetooth"></span></a>
+			<a class="nav-item nav-link main-tab-item" id="nav-sendspin-tab" data-visible="false" data-bs-toggle="tab"
+				href="#nav-sendspin" data-bs-target="#nav-sendspin" role="tab" aria-controls="nav-sendspin"
+				aria-selected="false"><i class="fas fa-tower-broadcast"></i><span data-i18n="nav.sendspin"></span></a>
 			<a class="nav-item nav-link main-tab-item" id="nav-general-tab" data-bs-toggle="tab" href="#nav-general"
 				data-bs-target="#nav-general" role="tab" aria-controls="nav-general" aria-selected="false"><i
 					class="fas fa-sliders-h"></i><span data-i18n="nav.general"></span></a>
@@ -1411,6 +1414,54 @@
 							</div>
 
 							<div class="mt-3"><button type="submit" class="btn btn-primary" data-i18n="bt.saveButton"></button></div>
+						</div>
+					</div>
+				</form>
+			</div>
+		</div>
+		<!-- ### Tab Sendspin ### -->
+		<div class="tab-pane main-tab-pane fade mb-4" id="nav-sendspin" role="tabpanel" aria-labelledby="nav-sendspin-tab">
+			<div class="container mt-4">
+				<div class="mb-4 col-md-12">
+					<legend data-i18n="sendspin.status.title"></legend>
+					<div class="settings-group-card">
+						<div class="d-flex align-items-center gap-2">
+							<span id="sendspinDot" class="rounded-circle bg-secondary" style="width:14px;height:14px;flex:0 0 14px;"></span>
+							<span id="sendspinStatusText" class="text-muted" data-i18n="sendspin.status.disconnected"></span>
+						</div>
+						<div id="sendspinNowPlaying" class="d-flex align-items-center gap-3 mt-3 pt-3 border-top d-none">
+							<img id="sendspinCover" alt="" class="rounded d-none" style="width:64px;height:64px;object-fit:cover;flex:0 0 64px;">
+							<div class="text-truncate">
+								<div class="small text-muted"><i class="fas fa-music me-1"></i><span id="sendspinPlayState"></span></div>
+								<div id="sendspinTitle" class="fw-semibold text-truncate"></div>
+								<div id="sendspinArtist" class="text-muted text-truncate"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="mb-4 col-md-12">
+					<legend data-i18n="sendspin.pairing.title"></legend>
+					<div class="settings-group-card">
+						<p class="text-muted small mb-2" data-i18n="sendspin.pairing.explanation"></p>
+						<div class="input-group">
+							<input type="text" class="form-control font-monospace" id="sendspinPairingToken" readonly value="">
+							<button type="button" class="btn btn-outline-primary" onclick="copySendspinToken()"><i class="fas fa-copy"></i> <span data-i18n="sendspin.pairing.copy"></span></button>
+						</div>
+						<div class="text-muted small mt-2"><span data-i18n="sendspin.pairing.clientId"></span>: <span id="sendspinClientId" class="font-monospace"></span></div>
+					</div>
+				</div>
+
+				<form action="#sendspinConfig" id="sendspinConfig" method="POST" onsubmit="sendspinSettings('sendspinConfig'); return false">
+					<div class="mb-3 col-md-12">
+						<legend data-i18n="sendspin.settings.title"></legend>
+						<div class="settings-group-card">
+							<div class="d-flex gap-2 mb-2">
+								<input type="checkbox" id="sendspinUnpairedAccess" name="sendspinUnpairedAccess">
+								<label for="sendspinUnpairedAccess" data-i18n="sendspin.settings.unpaired"></label>
+								<a class="link-secondary" data-bs-toggle="popover" data-i18n="[data-bs-content]sendspin.settings.unpairedExp" tabindex="0"><i class="fas fa-circle-question"></i></a>
+							</div>
+							<div class="mt-3"><button type="submit" class="btn btn-primary" data-i18n="sendspin.settings.save"></button></div>
 						</div>
 					</div>
 				</form>
@@ -4276,8 +4327,17 @@
 					volumeSlider.setValue(parseInt(socketMsg.volume));
 				}
 				if ("trackinfo" in socketMsg) {
-					document.getElementById('track').innerHTML = socketMsg.trackinfo.name;
+					// textContent: titles come from ID3 tags, stream metadata and Sendspin servers
+					document.getElementById('track').textContent = socketMsg.trackinfo.name;
 					setTrackProgress(socketMsg.trackinfo);
+					const isSendspin = socketMsg.trackinfo.source === 'sendspin';
+					const sourceChanged = (lastTrackSource === 'sendspin') !== isSendspin;
+					lastTrackSource = isSendspin ? 'sendspin' : 'local';
+					if (isSendspin) {
+						setPlayerCover(socketMsg.trackinfo.coverUrl);
+					} else if (sourceChanged) {
+						setPlayerCover(null);
+					}
 					var btnTrackPlayPause = document.getElementById('nav-btn-play');
 					if (socketMsg.trackinfo.pausePlay) {
 						btnTrackPlayPause.innerHTML = '<i id="ico-play-pause" class="fas fa-lg fa-play"></i>';
@@ -4286,16 +4346,24 @@
 					}
 					var btnTrackFirst = document.getElementById('nav-btn-first');
 					var btnTrackPrev = document.getElementById('nav-btn-prev');
-					if (socketMsg.trackinfo.currentTrackNumber <= 1) {
+					var btnTrackLast = document.getElementById('nav-btn-last');
+					var btnTrackNext = document.getElementById('nav-btn-next');
+					if (isSendspin) {
+						// the Sendspin server handles previous/next; first/last have no equivalent there
+						btnTrackFirst.classList.add("disabled");
+						btnTrackLast.classList.add("disabled");
+						btnTrackPrev.classList.remove("disabled");
+						btnTrackNext.classList.remove("disabled");
+					} else if (socketMsg.trackinfo.currentTrackNumber <= 1) {
 						btnTrackFirst.classList.add("disabled");
 						btnTrackPrev.classList.add("disabled");
 					} else {
 						btnTrackFirst.classList.remove("disabled");
 						btnTrackPrev.classList.remove("disabled");
 					}
-					var btnTrackLast = document.getElementById('nav-btn-last');
-					var btnTrackNext = document.getElementById('nav-btn-next');
-					if (socketMsg.trackinfo.currentTrackNumber >= socketMsg.trackinfo.numberOfTracks) {
+					if (isSendspin) {
+						// handled above
+					} else if (socketMsg.trackinfo.currentTrackNumber >= socketMsg.trackinfo.numberOfTracks) {
 						btnTrackLast.classList.add("disabled");
 						btnTrackNext.classList.add("disabled");
 					} else {
@@ -4306,7 +4374,8 @@
 				if ("trackProgress" in socketMsg) {
 					setTrackProgress(socketMsg.trackProgress);
 				}
-				if ("coverimg" in socketMsg) {
+				if ("coverimg" in socketMsg && lastTrackSource !== 'sendspin') {
+					// while Sendspin plays, the cover comes from its server (trackinfo.coverUrl)
 					document.getElementById('coverimg').src = "http://" + host + "/cover?" + new Date().getTime();
 				}
 				if ("settings" in socketMsg) {
@@ -4330,6 +4399,115 @@
 				refreshBtConnectionStatus();
 			}
 		}, 3000);
+
+		// ### Sendspin ###
+		// Source of the track shown in the player view: 'local' or 'sendspin' (from trackinfo)
+		var lastTrackSource = 'local';
+
+		// Cover art URLs come from the Sendspin server; only plain http(s) image URLs are used
+		function isSafeImageUrl(url) {
+			return typeof url === 'string' && /^https?:\/\//i.test(url);
+		}
+
+		function setPlayerCover(url) {
+			const img = document.getElementById('coverimg');
+			img.src = isSafeImageUrl(url) ? url : "http://" + host + "/cover?" + new Date().getTime();
+		}
+
+		function renderSendspinStatus(s) {
+			const dot = document.getElementById('sendspinDot');
+			const text = document.getElementById('sendspinStatusText');
+			let key = 'sendspin.status.disconnected';
+			let dotClass = 'bg-secondary';
+			if (!s.running) {
+				key = 'sendspin.status.notRunning';
+			} else if (s.connected && s.paired) {
+				key = 'sendspin.status.connectedPaired';
+				dotClass = 'bg-success';
+			} else if (s.connected) {
+				key = 'sendspin.status.connectedUnpaired';
+				dotClass = 'bg-warning';
+			}
+			dot.className = 'rounded-circle ' + dotClass;
+			text.className = s.connected ? '' : 'text-muted';
+			text.textContent = i18next.t(key, { server: s.serverName || '?' });
+
+			document.getElementById('sendspinPairingToken').value = s.pairingToken || '';
+			document.getElementById('sendspinClientId').textContent = s.clientId || '-';
+
+			const nowPlaying = document.getElementById('sendspinNowPlaying');
+			const hasTrack = s.connected && !!s.title;
+			nowPlaying.classList.toggle('d-none', !hasTrack);
+			if (hasTrack) {
+				document.getElementById('sendspinPlayState').textContent = i18next.t(s.playing ? 'sendspin.status.playing' : 'sendspin.status.paused');
+				document.getElementById('sendspinTitle').textContent = s.title;
+				document.getElementById('sendspinArtist').textContent = [s.artist, s.album].filter(Boolean).join(' · ');
+				const cover = document.getElementById('sendspinCover');
+				if (isSafeImageUrl(s.artworkUrl)) {
+					if (cover.getAttribute('src') !== s.artworkUrl) cover.src = s.artworkUrl;
+					cover.classList.remove('d-none');
+				} else {
+					cover.classList.add('d-none');
+				}
+			}
+		}
+
+		async function refreshSendspinStatus() {
+			try {
+				const response = await fetch('/sendspinstatus', { cache: 'no-store' });
+				if (!response.ok) return;
+				renderSendspinStatus(await response.json());
+			} catch (error) {
+				console.debug('Sendspin status unavailable:', error);
+			}
+		}
+
+		document.getElementById('nav-sendspin-tab').addEventListener('shown.bs.tab', refreshSendspinStatus);
+
+		setInterval(function () {
+			if (document.getElementById('nav-sendspin')?.classList.contains('active')) {
+				refreshSendspinStatus();
+			}
+		}, 3000);
+
+		// The web UI usually runs on plain http, where navigator.clipboard isn't available
+		async function copySendspinToken() {
+			const field = document.getElementById('sendspinPairingToken');
+			if (!field.value) return;
+			try {
+				if (navigator.clipboard && window.isSecureContext) {
+					await navigator.clipboard.writeText(field.value);
+				} else {
+					field.select();
+					if (!document.execCommand('copy')) throw new Error('copy failed');
+				}
+				toaster.info(i18next.t('sendspin.pairing.copied'));
+			} catch (error) {
+				field.select();
+				toaster.warning(i18next.t('sendspin.pairing.copyManually'));
+			}
+		}
+
+		async function sendspinSettings(clickedId) {
+			lastIdclicked = clickedId;
+			const body = JSON.stringify({
+				"sendspin": {
+					unpairedAccess: document.getElementById('sendspinUnpairedAccess').checked
+				}
+			});
+			try {
+				const response = await fetch("http://" + host + "/settings", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: body
+				});
+				if (!response.ok) throw new Error(response.statusText);
+				toaster.info(i18next.t("toast.saved"));
+				refreshSendspinStatus();
+			} catch (error) {
+				toaster.error(i18next.t("toast.error") + ": " + error.message);
+			}
+		}
 
 		function getHexColor(number) {
 			return "#" + ('000000' + ((number) >>> 0).toString(16)).slice(-6);
@@ -4839,8 +5017,14 @@
 					});
 				});
 			}
+			// sendspin
+			let sendspinSettingsObj = settings.sendspin;
+			if (sendspinSettingsObj) {
+				document.getElementById('nav-sendspin-tab').setAttribute('data-visible', true);
+				document.getElementById('sendspinUnpairedAccess').checked = !!sendspinSettingsObj.unpairedAccess;
+			}
 			// On the very first settings load, restore the previously active tab now that
-			// conditional tabs (bluetooth, ftp, mqtt) are visible.
+			// conditional tabs (bluetooth, ftp, mqtt, sendspin) are visible.
 			if (!initialSettingsLoaded) {
 				initialSettingsLoaded = true;
 				selectActiveTabFromLocalStorage();

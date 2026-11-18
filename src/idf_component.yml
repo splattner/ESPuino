@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+## Components needed by ESPuino on top of the ones the Arduino framework brings in.
+dependencies:
+  # Sendspin synchronized audio streaming client (https://www.sendspin-audio.com/).
+  # Pinned: the SDK API still changes between minor versions.
+  sendspin/sendspin-cpp: "==0.9.5"

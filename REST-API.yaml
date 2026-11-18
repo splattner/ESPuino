@@ -751,6 +751,60 @@ paths:
                   name:
                     type: string
                     description: "Friendly peer name when known. Present only when connected."
+  /sendspinstatus:
+    get:
+      summary: Get Sendspin receiver status.
+      description: >-
+        Returns the state of the Sendspin receiver (synchronized audio streaming
+        from e.g. Music Assistant): connection and pairing, the pairing token to
+        enter in the server, and the server's current track. Without
+        SENDSPIN_ENABLE only `running: false` is returned.
+      responses:
+        "200":
+          description: Current Sendspin status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - running
+                properties:
+                  running:
+                    type: boolean
+                    description: "Client started (normal operation mode only)."
+                  connected:
+                    type: boolean
+                  paired:
+                    type: boolean
+                    description: "The connection uses a long-term pairing record."
+                  playing:
+                    type: boolean
+                    description: "The server's group is playing."
+                  isSource:
+                    type: boolean
+                    description: "Sendspin currently owns the speaker and the player controls."
+                  unpairedAccess:
+                    type: boolean
+                  serverName:
+                    type: string
+                  title:
+                    type: string
+                  artist:
+                    type: string
+                  album:
+                    type: string
+                  artworkUrl:
+                    type: string
+                  progressMs:
+                    type: integer
+                  durationMs:
+                    type: integer
+                    description: "0 when unknown (e.g. radio)."
+                  clientId:
+                    type: string
+                  pairingToken:
+                    type: string
+                    description: "Token (SP:...) to enter in the Sendspin server for pairing."
   /bluetoothconnect:
     post:
       summary: Connect to a Bluetooth device.

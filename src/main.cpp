@@ -24,6 +24,7 @@
 #include "RfidConfig.h"
 #include "RotaryEncoder.h"
 #include "SdCard.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Web.h"
 #include "Wlan.h"
@@ -183,6 +184,9 @@ void setup() {
 	RotaryEncoder_Init();
 	Bluetooth_Init();
 	Wlan_Init();
+#ifdef SENDSPIN_ENABLE
+	Sendspin_Init(); // before the first Wlan_Cyclic(), which advertises it via mDNS once connected
+#endif
 	Mqtt_Init();
 
 	if (OPMODE_NORMAL == System_GetOperationMode()) {
@@ -232,6 +236,9 @@ void loop() {
 	}
 	RotaryEncoder_Cyclic();
 	Ftp_Cyclic();
+#ifdef SENDSPIN_ENABLE
+	Sendspin_Cyclic();
+#endif
 	AudioPlayer_Cyclic();
 	Battery_Cyclic();
 	Button_Cyclic();

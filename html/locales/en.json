@@ -37,6 +37,7 @@
 		"mqtt": "MQTT",
 		"ftp": "FTP",
 		"bluetooth": "Bluetooth",
+		"sendspin": "Sendspin",
 		"general": "General",
 		"updates": "Updates",
 		"tools": "Tools",
@@ -527,6 +528,31 @@
 		"connection": {
 			"connected": "Connected to: {{device}}",
 			"disconnected": "Not connected"
+		}
+	},
+	"sendspin": {
+		"status": {
+			"title": "Sendspin receiver",
+			"notRunning": "Sendspin is not running (only available in normal mode)",
+			"disconnected": "Waiting for a Sendspin server (e.g. Music Assistant)",
+			"connectedPaired": "Connected to {{server}} (paired)",
+			"connectedUnpaired": "Connected to {{server}} (not paired)",
+			"playing": "Playing",
+			"paused": "Paused"
+		},
+		"pairing": {
+			"title": "Pairing",
+			"explanation": "To let a Sendspin server play on this ESPuino, enter this pairing token in the server (in Music Assistant: in the settings of the ESPuino player). Anyone who knows the token can pair, so only share it with servers you trust.",
+			"copy": "Copy",
+			"copied": "Pairing token copied",
+			"copyManually": "Copying failed: the token is selected, copy it manually (Ctrl+C)",
+			"clientId": "Client ID"
+		},
+		"settings": {
+			"title": "Sendspin settings",
+			"unpaired": "Allow unpaired access",
+			"unpairedExp": "When enabled, any Sendspin server on your network may play on this ESPuino without pairing first. Leave it off unless you trust everyone on your network.",
+			"save": "Save Sendspin settings"
 		}
 	},
 	"general": {
