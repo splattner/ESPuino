@@ -50,6 +50,15 @@
 // lastCardId intact, so no re-queue or pause). Sweep finds nothing -> real removal: declare it. One
 // sweep per failure episode; a removed card is declared removed one sweep after the debounce.
 
+// A heal sweep used to conclude on a single read right after the chip RESET. At marginal distance that one
+// read can miss although the card never moved, and the card is then declared removed. Give it a few tries.
+constexpr uint8_t healReadAttempts = 3;
+
+// When the heal does give up although the card never moved, the next good read looks like a new card and
+// (without pauseIfRfidRemoved) gets queued, which rebuilds the playlist = playback restarts. If exactly that
+// card is back within this window while its playlist is still running, treat it as a dropout, not a new tap.
+constexpr uint32_t reappearGraceMs = 5000;
+
 extern unsigned long Rfid_LastRfidCheckTimestamp;
 extern TaskHandle_t rfidTaskHandle;
 
@@ -258,6 +267,16 @@ void RfidPn5180_Task(void *parameter) {
 	bool silentHealActive = false; // a full re-init sweep is in progress to un-wedge a still-present card
 	uint32_t silentHealStartMs = 0; // millis() when the current heal started (for the recover/give-up logs)
 	uint8_t silentHealGiveUpState = 0; // the wedged protocol's read state; the sweep concludes when it is re-reached
+	uint8_t healReadsLeft = 0; // read attempts left before the running heal sweep gives up
+	byte lostCardId[cardIdSize] = {0}; // card the last heal gave up on (raw UID, see reappearGraceMs)
+	uint32_t lostCardMs = 0; // millis() of that give-up, 0 = none
+	auto rememberLostCard = [&]() {
+		memcpy(lostCardId, lastCardId, cardIdSize);
+		lostCardMs = millis();
+		if (!lostCardMs) {
+			lostCardMs = 1; // 0 means "none"
+		}
+	};
 
 	// wait until queues are created
 	while (gRfidCardQueue == NULL) {
@@ -271,6 +290,7 @@ void RfidPn5180_Task(void *parameter) {
 			// An assignment changed (or the web UI started playback): the card on/near the reader may now
 			// mean something else, so it must not be treated as "same card re-applied" any more.
 			memset(lastValidcardId, 0, sizeof(lastValidcardId));
+			lostCardMs = 0; // re-applying it must not be swallowed as a dropout either
 		}
 		if (Rfid_Pn5180LpcdEnabled() && Rfid_GetLpcdShutdownStatus()) {
 			Rfid_EnableLpcd();
@@ -330,12 +350,17 @@ void RfidPn5180_Task(void *parameter) {
 				// this failed 14443 read is just a step in an ISO-15693 heal sweep: keep walking
 				// (bottom-of-loop state++), do not declare removal or re-enter the fast path.
 				if (silentHealGiveUpState == RFID_PN5180_NFC14443_STATE_READCARD) {
-					Log_Printf(LOGLEVEL_DEBUG, "PN5180 silent heal gave up after %u ms (ISO-14443 card not re-found)", millis() - silentHealStartMs);
-					silentHealActive = false;
-					lastTimeDetected14443 = 0;
-					cardAppliedCurrentRun = false;
-					for (uint8_t i = 0; i < cardIdSize; i++) {
-						lastCardId[i] = 0;
+					if (--healReadsLeft > 0) {
+						stateMachine = RFID_PN5180_NFC14443_STATE_ACTIVE; // -> READCARD again next round
+					} else {
+						Log_Printf(LOGLEVEL_DEBUG, "PN5180 silent heal gave up after %u ms (ISO-14443 card not re-found)", millis() - silentHealStartMs);
+						silentHealActive = false;
+						lastTimeDetected14443 = 0;
+						cardAppliedCurrentRun = false;
+						rememberLostCard();
+						for (uint8_t i = 0; i < cardIdSize; i++) {
+							lastCardId[i] = 0;
+						}
 					}
 				}
 			} else {
@@ -352,6 +377,7 @@ void RfidPn5180_Task(void *parameter) {
 						silentHealActive = true;
 						silentHealStartMs = millis();
 						silentHealGiveUpState = RFID_PN5180_NFC14443_STATE_READCARD;
+					healReadsLeft = healReadAttempts;
 						Log_Printf(LOGLEVEL_DEBUG, "PN5180 wedge/removal suspected (%u ms since last good ISO-14443 read): silent re-init", millis() - lastTimeDetected14443);
 						stateMachine = RFID_PN5180_NFC15693_STATE_RESET;
 						continue;
@@ -408,12 +434,17 @@ void RfidPn5180_Task(void *parameter) {
 				// the one being healed and it failed after a full sweep -> card really gone. Otherwise
 				// this failed 15693 read is just a step in an ISO-14443 heal sweep: keep walking.
 				if (silentHealGiveUpState == RFID_PN5180_NFC15693_STATE_GETINVENTORY) {
-					Log_Printf(LOGLEVEL_DEBUG, "PN5180 silent heal gave up after %u ms (ISO-15693 card not re-found)", millis() - silentHealStartMs);
-					silentHealActive = false;
-					lastTimeDetected15693 = 0;
-					cardAppliedCurrentRun = false;
-					for (uint8_t i = 0; i < cardIdSize; i++) {
-						lastCardId[i] = 0;
+					if (--healReadsLeft > 0) {
+						stateMachine = RFID_PN5180_NFC15693_STATE_ACTIVE; // -> GETINVENTORY again next round
+					} else {
+						Log_Printf(LOGLEVEL_DEBUG, "PN5180 silent heal gave up after %u ms (ISO-15693 card not re-found)", millis() - silentHealStartMs);
+						silentHealActive = false;
+						lastTimeDetected15693 = 0;
+						cardAppliedCurrentRun = false;
+						rememberLostCard();
+						for (uint8_t i = 0; i < cardIdSize; i++) {
+							lastCardId[i] = 0;
+						}
 					}
 				}
 			} else {
@@ -426,6 +457,7 @@ void RfidPn5180_Task(void *parameter) {
 						silentHealActive = true;
 						silentHealStartMs = millis();
 						silentHealGiveUpState = RFID_PN5180_NFC15693_STATE_GETINVENTORY;
+					healReadsLeft = healReadAttempts;
 						Log_Printf(LOGLEVEL_DEBUG, "PN5180 wedge/removal suspected (%u ms since last good ISO-15693 read): silent re-init", millis() - lastTimeDetected15693);
 						stateMachine = RFID_PN5180_NFC14443_STATE_RESET;
 						continue;
@@ -508,9 +540,15 @@ void RfidPn5180_Task(void *parameter) {
 					}
 				}
 				memcpy(lastValidcardId, uid, cardIdSize);
+			} else if (lostCardMs && (millis() - lostCardMs < reappearGraceMs) && memcmp(lostCardId, lastCardId, cardIdSize) == 0
+				&& gPlayProperties.playMode != NO_PLAYLIST && !gPlayProperties.playlistFinished) {
+				// The card the last heal gave up on is back within moments while its playlist still runs:
+				// it was a read dropout, not a new tap. Queueing it would rebuild the playlist (= restart).
+				Log_Printf(LOGLEVEL_NOTICE, "PN5180: same tag back %u ms after read dropout, keep playing", millis() - lostCardMs);
 			} else {
 				xQueueSend(gRfidCardQueue, cardIdString.c_str(), 0); // If pauseIfRfidRemoved isn't active, every card-apply leads to new playlist-generation
 			}
+			lostCardMs = 0;
 		}
 
 		if (RFID_PN5180_NFC14443_STATE_ACTIVE == stateMachine) {

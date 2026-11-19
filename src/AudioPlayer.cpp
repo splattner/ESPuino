@@ -369,7 +369,33 @@ void Audio_InfoCallback(Audio::msg_t m) {
 			file.close();
 			break;
 		}
-		default: // ignored events: evt_icydescription, evt_lyrics, evt_log
+		case Audio::evt_log: {
+			// The library's own errors/warnings (decoder errors, skipped frames, ...). Only emitted when built with
+			// CORE_DEBUG_LEVEL >= 1 (errors) / >= 2 (warnings); the default build has 0, so this is silent there.
+			if (!m.msg) {
+				break;
+			}
+			// strip the ANSI color codes the library wraps its messages in (they'd garble the web log)
+			char clean[200];
+			size_t n = 0;
+			for (const char *p = m.msg; *p && n < sizeof(clean) - 1; p++) {
+				if (*p == '\033') {
+					while (*p && *p != 'm') {
+						p++;
+					}
+					if (!*p) {
+						break;
+					}
+					continue;
+				}
+				clean[n++] = *p;
+			}
+			clean[n] = '\0';
+			const bool isError = m.s && strcmp(m.s, "LOGE") == 0;
+			Log_Printf(isError ? LOGLEVEL_ERROR : LOGLEVEL_DEBUG, "audio: %s", clean);
+			break;
+		}
+		default: // ignored events: evt_icydescription, evt_lyrics
 			break;
 	}
 }
