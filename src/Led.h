@@ -26,6 +26,7 @@ enum class LedAnimationType {
 	Speech,
 	Pause,
 	Progress,
+	Spectrum, // Sendspin visualizer
 	Webstream,
 	Idle,
 	Busy,

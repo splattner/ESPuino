@@ -538,7 +538,8 @@
 			"connectedPaired": "Connecté à {{server}} (appairé)",
 			"connectedUnpaired": "Connecté à {{server}} (non appairé)",
 			"playing": "Lecture",
-			"paused": "En pause"
+			"paused": "En pause",
+			"disabled": "Sendspin est désactivé (voir les réglages ci-dessous)"
 		},
 		"pairing": {
 			"title": "Appairage",
@@ -552,7 +553,14 @@
 			"title": "Réglages Sendspin",
 			"unpaired": "Autoriser l'accès sans appairage",
 			"unpairedExp": "Si activé, tout serveur Sendspin de votre réseau peut jouer sur cet ESPuino sans appairage préalable. Ne l'activez que si vous faites confiance à tous les appareils de votre réseau.",
-			"save": "Enregistrer les réglages Sendspin"
+			"save": "Enregistrer les réglages Sendspin",
+			"enabled": "Activer le récepteur Sendspin",
+			"enabledExp": "Permet aux serveurs Sendspin comme Music Assistant de jouer sur cet ESPuino. Désactivé, le récepteur n’est pas démarré et n’utilise pas de mémoire. Prend effet après un redémarrage.",
+			"restartRequired": "Enregistré. Redémarrez ESPuino pour appliquer la modification.",
+			"ledMode": "Anneau LED pendant le streaming",
+			"ledModeExp": "Ce que l’anneau LED affiche pendant la lecture d’un flux Sendspin. Le spectre nécessite un serveur qui envoie des données de visualisation ; sinon l’anneau affiche la progression du titre.",
+			"ledModeProgress": "Progression du titre",
+			"ledModeSpectrum": "Spectre (couleurs de la pochette)"
 		}
 	},
 	"general": {

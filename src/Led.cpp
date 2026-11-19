@@ -11,6 +11,7 @@
 #include "Mqtt.h"
 #include "Port.h"
 #include "Queues.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Wlan.h"
 
@@ -78,6 +79,28 @@ AnimationReturnType Animation_Busy(const bool startNewAnimation, CRGBSet &leds);
 AnimationReturnType Animation_Pause(const bool startNewAnimation, CRGBSet &leds);
 AnimationReturnType Animation_Speech(const bool startNewAnimation, CRGBSet &leds);
 AnimationReturnType Animation_Download(const bool startNewAnimation, CRGBSet &leds);
+AnimationReturnType Animation_Spectrum(const bool startNewAnimation, CRGBSet &leds);
+
+// Playback state for the animations: the Sendspin stream's while it is the audio source (local playback
+// is paused then), the local player's otherwise
+static bool Led_PlaybackPaused(void) {
+	#ifdef SENDSPIN_ENABLE
+	if (Sendspin_IsSource()) {
+		return !Sendspin_LedIsPlaying();
+	}
+	#endif
+	return gPlayProperties.pausePlay;
+}
+
+static double Led_PlaybackRelPos(void) {
+	#ifdef SENDSPIN_ENABLE
+	if (Sendspin_IsSource()) {
+		const uint8_t progress = Sendspin_LedGetProgress();
+		return progress <= 100 ? progress : 0;
+	}
+	#endif
+	return gPlayProperties.currentRelPos;
+}
 
 // Pushed by MediaHub via Led_SetDownloadProgress(); Led_Task only ever reads
 // these, it doesn't know MediaHub exists (same arrangement as the
@@ -500,6 +523,19 @@ static void Led_Task(void *parameter) {
 			nextAnimation = LedAnimationType::Playlist;
 		} else if (gPlayProperties.currentSpeechActive) {
 			nextAnimation = LedAnimationType::Speech;
+	#ifdef SENDSPIN_ENABLE
+		} else if (Sendspin_IsSource()) { // Sendspin stream (local playback is paused meanwhile)
+			SendspinSpectrum spectrum;
+			if (!Sendspin_LedIsPlaying()) {
+				nextAnimation = LedAnimationType::Pause;
+			} else if (Sendspin_LedGetSpectrum(spectrum)) {
+				nextAnimation = LedAnimationType::Spectrum;
+			} else if (Sendspin_LedGetProgress() <= 100) {
+				nextAnimation = LedAnimationType::Progress;
+			} else {
+				nextAnimation = LedAnimationType::Webstream; // unknown length, e.g. radio
+			}
+	#endif
 		} else if (gPlayProperties.playlistFinished) {
 			nextAnimation = LedAnimationType::Idle;
 		} else if (gPlayProperties.pausePlay && !gPlayProperties.isWebstream) {
@@ -602,6 +638,10 @@ static void Led_Task(void *parameter) {
 
 					case LedAnimationType::Webstream:
 						ret = Animation_Webstream(startNewAnimation, *indicator);
+						break;
+
+					case LedAnimationType::Spectrum:
+						ret = Animation_Spectrum(startNewAnimation, *indicator);
 						break;
 
 					default:
@@ -867,7 +907,7 @@ AnimationReturnType Animation_Webstream(const bool startNewAnimation, CRGBSet &l
 	static uint16_t timerProgress = 0;
 
 	// pause-animation
-	if (gPlayProperties.pausePlay) {
+	if (Led_PlaybackPaused()) {
 		leds = CRGB::Black;
 		CRGB::HTMLColorCode generalColor = CRGB::Orange;
 		if (OPMODE_BLUETOOTH_SINK == System_GetOperationMode()) {
@@ -1074,8 +1114,9 @@ AnimationReturnType Animation_Progress(const bool startNewAnimation, CRGBSet &le
 	const bool previewActive = AudioPlayer_IsSeekPreviewActive();
 	const uint8_t previewTarget = AudioPlayer_GetSeekPreviewTargetPercent();
 
-	if (gPlayProperties.currentRelPos != lastPos || previewActive != lastPreviewActive || (previewActive && (previewTarget != lastPreviewTarget)) || startNewAnimation) {
-		lastPos = gPlayProperties.currentRelPos;
+	const double relPos = Led_PlaybackRelPos();
+	if (relPos != lastPos || previewActive != lastPreviewActive || (previewActive && (previewTarget != lastPreviewTarget)) || startNewAnimation) {
+		lastPos = relPos;
 		lastPreviewActive = previewActive;
 		lastPreviewTarget = previewTarget;
 		leds = CRGB::Black;
@@ -1085,10 +1126,10 @@ AnimationReturnType Animation_Progress(const bool startNewAnimation, CRGBSet &le
 				// unambiguous "preview active" signal, at the cost of not showing the target itself.
 				leds[0] = CRGB::Blue;
 			} else {
-				leds[0].setHue((uint8_t) (85 - ((double) 90 / 100) * gPlayProperties.currentRelPos));
+				leds[0].setHue((uint8_t) (85 - ((double) 90 / 100) * relPos));
 			}
 		} else {
-			const uint32_t ledValue = std::clamp<uint32_t>(map(gPlayProperties.currentRelPos, 0, 98, 0, leds.size() * gLedSettings.dimmableStates), 0, leds.size() * gLedSettings.dimmableStates);
+			const uint32_t ledValue = std::clamp<uint32_t>(map(relPos, 0, 98, 0, leds.size() * gLedSettings.dimmableStates), 0, leds.size() * gLedSettings.dimmableStates);
 			const uint8_t fullLeds = ledValue / gLedSettings.dimmableStates;
 			const uint8_t lastLed = ledValue % gLedSettings.dimmableStates;
 			for (uint8_t led = 0; led < fullLeds; led++) {
@@ -1096,7 +1137,7 @@ AnimationReturnType Animation_Progress(const bool startNewAnimation, CRGBSet &le
 					leds[Led_Address(led)] = CRGB::Red;
 				} else if (previewActive) {
 					leds[Led_Address(led)] = CRGB::Yellow;
-				} else if (!gPlayProperties.pausePlay) { // Hue-rainbow
+				} else if (!Led_PlaybackPaused()) { // Hue-rainbow
 					leds[Led_Address(led)].setHue((uint8_t) (((float) gLedSettings.progressHueEnd - (float) gLedSettings.progressHueStart) / (leds.size() - 1) * led + gLedSettings.progressHueStart));
 				}
 			}
@@ -1121,6 +1162,69 @@ AnimationReturnType Animation_Progress(const bool startNewAnimation, CRGBSet &le
 		animationDelay = 10;
 	}
 	return AnimationReturnType(false, animationDelay, true);
+}
+
+// --------------------------------
+// Spectrum Animation (Sendspin visualizer)
+// --------------------------------
+// Each LED shows the level of a band of the spectrum (low to high frequency along the ring), colored
+// with the album art's colors if the server sends them (the progress hues otherwise); beats flash the
+// whole ring briefly.
+AnimationReturnType Animation_Spectrum(const bool startNewAnimation, CRGBSet &leds) {
+	(void) startNewAnimation; // every frame is drawn from scratch
+	leds = CRGB::Black;
+	#ifdef SENDSPIN_ENABLE
+	SendspinSpectrum spectrum;
+	if (Sendspin_LedGetSpectrum(spectrum)) {
+		const uint8_t numLeds = leds.size();
+		const uint8_t beatGlow = spectrum.beat / 3;
+
+		// Auto gain: the loudest band reaches (nearly) full brightness whatever the track's loudness. Follows
+		// a louder peak at once and a quieter one slowly (~2.5 s from full scale to the minimum).
+		static uint8_t agcPeak = 255;
+		uint8_t framePeak = 0;
+		for (uint8_t bin = 0; bin < kSendspinSpectrumBins; bin++) {
+			framePeak = std::max(framePeak, spectrum.levels[bin]);
+		}
+		if (framePeak >= agcPeak) {
+			agcPeak = framePeak;
+		} else if (agcPeak > 96) {
+			agcPeak--; // never boosts more than ~2.7x, so near-silence stays dark
+		}
+
+		for (uint8_t led = 0; led < numLeds; led++) {
+			// loudest of the bands that fall on this LED
+			const uint8_t firstBin = led * kSendspinSpectrumBins / numLeds;
+			const uint8_t endBin = std::max<uint8_t>(firstBin + 1, (led + 1) * kSendspinSpectrumBins / numLeds);
+			uint8_t level = 0;
+			for (uint8_t bin = firstBin; bin < endBin && bin < kSendspinSpectrumBins; bin++) {
+				level = std::max(level, spectrum.levels[bin]);
+			}
+			level = std::min<uint32_t>(255, static_cast<uint32_t>(level) * 255 / agcPeak);
+			level = std::min(255, level + beatGlow);
+			if (level == 0) {
+				continue;
+			}
+
+			CRGB color;
+			if (System_AreControlsLocked()) {
+				color = CRGB::Red;
+			} else if (spectrum.haveColors) {
+				// gradient from the primary to the accent color along the ring
+				const int32_t pos = (numLeds > 1) ? led * 255 / (numLeds - 1) : 0;
+				for (uint8_t c = 0; c < 3; c++) {
+					color.raw[c] = spectrum.primary[c] + (static_cast<int32_t>(spectrum.accent[c]) - spectrum.primary[c]) * pos / 255;
+				}
+			} else {
+				const float hueStep = (numLeds > 1) ? ((float) gLedSettings.progressHueEnd - (float) gLedSettings.progressHueStart) / (numLeds - 1) : 0.0f;
+				color.setHue((uint8_t) (hueStep * led + gLedSettings.progressHueStart));
+			}
+			// mildly curved (between linear and squared), so peaks still stand out
+			leds[Led_Address(led)] = color.nscale8(std::max(1, (level + level * level / 255) / 2));
+		}
+	}
+	#endif
+	return AnimationReturnType(false, 20, true);
 }
 
 // --------------------------------

@@ -2,6 +2,10 @@
 
 ## DEV-branch
 
+* 19.11.2026: Sendspin: ESPuino can now be a [Sendspin](https://www.sendspin-audio.com/) speaker, so [Music Assistant](https://www.music-assistant.io/) can stream to it in sync with other speakers. A stream pauses local playback; a card or local playback takes the speaker back. While streaming, buttons, volume and the sleep modes act on the stream, the web interface shows its title and cover, the LED ring shows its progress (or, optionally, a spectrum in the album art's colors), and MQTT reports it on `track`, `pauseplay` and the new `source` and `sendspin_state` topics. Pairing and settings are in the new Sendspin tab. Only on boards with PSRAM and 16 MB flash; adds about 400 KB of firmware. See [docs/sendspin.md](docs/sendspin.md).
+
+* 19.11.2026: Web: the web interface's files are cached by a hash of their content instead of the git revision, so a new firmware built from uncommitted changes no longer leaves the browser with the old page.
+
 ## Version 3.2 (07.11.2026)
 
 * 07.11.2026: MQTT: `ambient_light` and `sleep` now report their state (`ON`/`OFF`) as announced, `lock_controls` reports `ON`/`OFF` right after connecting instead of `1`/`0`, and ESPuino registers a last will: if it drops off without a clean shutdown (power cut, crash, out of WiFi range), the broker itself publishes `Offline` on `state` after about 90 seconds (keepalive is now 60 s).

@@ -8,6 +8,7 @@
 #include "Log.h"
 #include "MemX.h"
 #include "Queues.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Wlan.h"
 #include "gitrevision.h"
@@ -400,6 +401,12 @@ void Mqtt_PublishSleepTimerState(bool force) {
 			remainingTracks = 1; // sleep after the current track
 			break;
 		case SleepTimerMode::EO5T:
+	#ifdef SENDSPIN_ENABLE
+			if (Sendspin_IsSource()) {
+				remainingTracks = Sendspin_SleepTracksLeft();
+				break;
+			}
+	#endif
 			// Guard on !playlistFinished: at the end of the playlist AudioPlayer_Loop() resets
 			// currentTrackNumber to 0 while the sleep flag is still set (until the device actually
 			// sleeps), which would otherwise make the difference report the full track count.
@@ -408,6 +415,11 @@ void Mqtt_PublishSleepTimerState(bool force) {
 			}
 			break;
 		case SleepTimerMode::EOP:
+	#ifdef SENDSPIN_ENABLE
+			if (Sendspin_IsSource()) {
+				break; // the stream's queue length is unknown
+			}
+	#endif
 			if (!gPlayProperties.playlistFinished && gPlayProperties.playlist && gPlayProperties.playlist->size() > gPlayProperties.currentTrackNumber) {
 				remainingTracks = gPlayProperties.playlist->size() - gPlayProperties.currentTrackNumber;
 			}
@@ -501,6 +513,9 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 					break;
 			}
 			Mqtt_PublishSleepTimerState(true);
+	#ifdef SENDSPIN_ENABLE
+			Sendspin_OnMqttConnected(); // source/sendspin_state, and track/pauseplay while streaming
+	#endif
 			publishMqtt(topicLockControls, System_AreControlsLocked() ? "ON" : "OFF", false);
 			publishMqtt(topicAmbientLight, Led_GetAmbientLight() ? "ON" : "OFF", false);
 			publishMqtt(topicPlaymode, static_cast<uint32_t>(gPlayProperties.playMode), false);
@@ -617,7 +632,11 @@ void Mqtt_ClientCallback(const char *topic_buf, uint32_t topic_length, const cha
 		}
 		// Modify sleep-timer?
 		else if (reduced_topic_str == topicSleepTimer) {
-			if (gPlayProperties.playMode == NO_PLAYLIST) { // Don't allow sleep-modications if no playlist is active
+			bool streaming = false; // a Sendspin stream counts as playback for the track-based modes
+	#ifdef SENDSPIN_ENABLE
+			streaming = Sendspin_IsSource();
+	#endif
+			if (gPlayProperties.playMode == NO_PLAYLIST && !streaming) { // Don't allow sleep-modications if no playlist is active
 				Log_Println(modificatorNotallowedWhenIdle, LOGLEVEL_INFO);
 				publishMqtt(topicSleepTimer, static_cast<uint32_t>(0), false);
 				System_IndicateError();
@@ -638,12 +657,13 @@ void Mqtt_ClientCallback(const char *topic_buf, uint32_t topic_length, const cha
 				System_IndicateOk();
 				return;
 			} else if (payload_str == "EO5T") {
-				if (gPlayProperties.playMode == NO_PLAYLIST || !gPlayProperties.playlist) {
+				if (streaming) {
+					gPlayProperties.playUntilTrackNumber = gPlayProperties.currentTrackNumber + 5; // Sendspin counts 5 track changes
+				} else if (gPlayProperties.playMode == NO_PLAYLIST || !gPlayProperties.playlist) {
 					Log_Println(modificatorNotallowedWhenIdle, LOGLEVEL_NOTICE);
 					System_IndicateError();
 					return;
-				}
-				if ((gPlayProperties.playlist->size() - 1) >= (gPlayProperties.currentTrackNumber + 5)) {
+				} else if ((gPlayProperties.playlist->size() - 1) >= (gPlayProperties.currentTrackNumber + 5)) {
 					gPlayProperties.playUntilTrackNumber = gPlayProperties.currentTrackNumber + 5;
 				} else {
 					gPlayProperties.sleepAfterPlaylist = true; // If +5 tracks is > than active playlist, take end of current playlist

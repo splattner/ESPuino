@@ -44,9 +44,15 @@
 	#define MEASURE_BATTERY_VOLTAGE         // Enables battery-measurement via GPIO (ADC) and voltage-divider
 	#define USEROTARY_ENABLE                // If rotary-encoder is used (don't forget to review WAKEUP_BUTTON if you disable this feature!)
 	#define BLUETOOTH_ENABLE                // If enabled and bluetooth-mode is active, you can stream to your ESPuino or to a headset via bluetooth (a2dp-sink & a2dp-source). Note: This feature consumes a lot of resources and the available flash/ram might not be sufficient.
-	#define SENDSPIN_ENABLE                 // Sendspin receiver (https://www.sendspin-audio.com/): stream synchronized audio from e.g. Music Assistant to ESPuino (normal mode only, needs PSRAM). Pair by entering the "Sendspin: pairing token" from ESPuino's log in the server.
+	#define SENDSPIN_ENABLE                 // Sendspin receiver (https://www.sendspin-audio.com/): stream synchronized audio from e.g. Music Assistant to ESPuino (normal mode only). Needs PSRAM and 16 MB flash, so it's left out automatically on other boards; can also be switched off in the web UI. See docs/sendspin.md.
 	//#define IR_CONTROL_ENABLE             // Enables remote control (https://forum.espuino.de/t/neues-feature-fernsteuerung-per-infrarot-fernbedienung/265)
 	//#define HALLEFFECT_SENSOR_ENABLE      // Support for hallsensor. For fine-tuning please adjust HallEffectSensor.h Please note: only user-support provided (https://forum.espuino.de/t/magnetische-hockey-tags/1449/35)
+
+	// Sendspin buffers its stream in PSRAM and adds ~400 KB of firmware: only for boards with PSRAM and 16 MB
+	// flash (envs with smaller app partitions set NO_SENDSPIN in platformio.ini)
+	#if defined(SENDSPIN_ENABLE) && (!defined(BOARD_HAS_PSRAM) || !defined(BOARD_HAS_16MB_FLASH_AND_OTA_SUPPORT) || defined(NO_SENDSPIN))
+		#undef SENDSPIN_ENABLE
+	#endif
 
 	//################## select SD card mode #############################
 	#define SD_MMC_1BIT_MODE              // run SD card in SD-MMC 1Bit mode (using GPIOs 15 + 14 + 2 is mandatory!)
@@ -241,6 +247,8 @@
 		constexpr const char topicPlaymode[] = "playmode";  // State: numeric playmode
 		constexpr const char topicWiFiRssi[] = "wifi_rssi"; // State: WiFi signal strength (dBm)
 		constexpr const char topicSRevision[] = "software_revision"; // State: software revision string
+		constexpr const char topicSource[] = "source"; // State: audio source: 'local' or 'sendspin' (a Sendspin stream from e.g. Music Assistant); while 'sendspin', track and pauseplay describe the stream
+		constexpr const char topicSendspinState[] = "sendspin_state"; // State: JSON {connected,playing,server,title,artist,album,artworkUrl,durationMs,progressMs} of the Sendspin receiver
 		#ifdef BATTERY_MEASURE_ENABLE
 		constexpr const char topicBatteryVoltage[] = "battery_voltage"; // State: battery voltage float (e.g. 3.81)
 		constexpr const char topicBatterySOC[]     = "battery_soc"; // State: battery charge percent (e.g. 83.0)

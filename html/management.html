@@ -1457,9 +1457,22 @@
 						<legend data-i18n="sendspin.settings.title"></legend>
 						<div class="settings-group-card">
 							<div class="d-flex gap-2 mb-2">
+								<input type="checkbox" id="sendspinEnabled" name="sendspinEnabled">
+								<label for="sendspinEnabled" data-i18n="sendspin.settings.enabled"></label>
+								<a class="link-secondary" data-bs-toggle="popover" data-i18n="[data-bs-content]sendspin.settings.enabledExp" tabindex="0"><i class="fas fa-circle-question"></i></a>
+							</div>
+							<div class="d-flex gap-2 mb-2">
 								<input type="checkbox" id="sendspinUnpairedAccess" name="sendspinUnpairedAccess">
 								<label for="sendspinUnpairedAccess" data-i18n="sendspin.settings.unpaired"></label>
 								<a class="link-secondary" data-bs-toggle="popover" data-i18n="[data-bs-content]sendspin.settings.unpairedExp" tabindex="0"><i class="fas fa-circle-question"></i></a>
+							</div>
+							<div id="sendspinLedModeGroup" class="mt-3 d-none">
+								<label for="sendspinLedMode" class="form-label" data-i18n="sendspin.settings.ledMode"></label>
+								<a class="link-secondary" data-bs-toggle="popover" data-i18n="[data-bs-content]sendspin.settings.ledModeExp" tabindex="0"><i class="fas fa-circle-question"></i></a>
+								<select class="form-select" id="sendspinLedMode" name="sendspinLedMode">
+									<option value="0" data-i18n="sendspin.settings.ledModeProgress"></option>
+									<option value="1" data-i18n="sendspin.settings.ledModeSpectrum"></option>
+								</select>
 							</div>
 							<div class="mt-3"><button type="submit" class="btn btn-primary" data-i18n="sendspin.settings.save"></button></div>
 						</div>
@@ -4403,6 +4416,8 @@
 		// ### Sendspin ###
 		// Source of the track shown in the player view: 'local' or 'sendspin' (from trackinfo)
 		var lastTrackSource = 'local';
+		// Sendspin "enabled" as the device currently runs it (from /sendspinstatus), to tell when a restart is needed
+		var sendspinRunningEnabled = null;
 
 		// Cover art URLs come from the Sendspin server; only plain http(s) image URLs are used
 		function isSafeImageUrl(url) {
@@ -4419,7 +4434,10 @@
 			const text = document.getElementById('sendspinStatusText');
 			let key = 'sendspin.status.disconnected';
 			let dotClass = 'bg-secondary';
-			if (!s.running) {
+			sendspinRunningEnabled = !!s.enabled;
+			if (!s.enabled) {
+				key = 'sendspin.status.disabled';
+			} else if (!s.running) {
 				key = 'sendspin.status.notRunning';
 			} else if (s.connected && s.paired) {
 				key = 'sendspin.status.connectedPaired';
@@ -4490,11 +4508,15 @@
 
 		async function sendspinSettings(clickedId) {
 			lastIdclicked = clickedId;
-			const body = JSON.stringify({
-				"sendspin": {
-					unpairedAccess: document.getElementById('sendspinUnpairedAccess').checked
-				}
-			});
+			const enabled = document.getElementById('sendspinEnabled').checked;
+			const settings = {
+				enabled: enabled,
+				unpairedAccess: document.getElementById('sendspinUnpairedAccess').checked
+			};
+			if (!document.getElementById('sendspinLedModeGroup').classList.contains('d-none')) {
+				settings.ledMode = parseInt(document.getElementById('sendspinLedMode').value, 10);
+			}
+			const body = JSON.stringify({ "sendspin": settings });
 			try {
 				const response = await fetch("http://" + host + "/settings", {
 					method: "POST",
@@ -4502,7 +4524,11 @@
 					body: body
 				});
 				if (!response.ok) throw new Error(response.statusText);
-				toaster.info(i18next.t("toast.saved"));
+				if (sendspinRunningEnabled !== null && enabled !== sendspinRunningEnabled) {
+					toaster.warning(i18next.t("sendspin.settings.restartRequired"));
+				} else {
+					toaster.info(i18next.t("toast.saved"));
+				}
 				refreshSendspinStatus();
 			} catch (error) {
 				toaster.error(i18next.t("toast.error") + ": " + error.message);
@@ -5022,6 +5048,11 @@
 			if (sendspinSettingsObj) {
 				document.getElementById('nav-sendspin-tab').setAttribute('data-visible', true);
 				document.getElementById('sendspinUnpairedAccess').checked = !!sendspinSettingsObj.unpairedAccess;
+				document.getElementById('sendspinEnabled').checked = sendspinSettingsObj.enabled !== false;
+				// LED mode only exists with an LED ring (NEOPIXEL_ENABLE)
+				const hasLedMode = sendspinSettingsObj.ledMode !== undefined;
+				document.getElementById('sendspinLedModeGroup').classList.toggle('d-none', !hasLedMode);
+				if (hasLedMode) document.getElementById('sendspinLedMode').value = String(sendspinSettingsObj.ledMode);
 			}
 			// On the very first settings load, restore the previously active tab now that
 			// conditional tabs (bluetooth, ftp, mqtt, sendspin) are visible.

@@ -1164,7 +1164,10 @@ WebsocketCodeType JSONToSettings(JsonObject doc) {
 	}
 #ifdef SENDSPIN_ENABLE
 	if (doc["sendspin"].is<JsonObject>()) {
-		Sendspin_SetUnpairedAccess(doc["sendspin"]["unpairedAccess"] | false);
+		Sendspin_SetEnabled(doc["sendspin"]["enabled"] | Sendspin_GetEnabled());
+		Sendspin_SetUnpairedAccess(doc["sendspin"]["unpairedAccess"] | Sendspin_GetUnpairedAccess());
+		const uint8_t ledMode = doc["sendspin"]["ledMode"] | static_cast<uint8_t>(Sendspin_GetLedMode());
+		Sendspin_SetLedMode(ledMode == static_cast<uint8_t>(SendspinLedMode::Spectrum) ? SendspinLedMode::Spectrum : SendspinLedMode::Progress);
 	}
 #endif
 	if (doc["bluetooth"].is<JsonObject>()) {
@@ -1630,7 +1633,11 @@ static void settingsToJSON(JsonObject obj, const String section) {
 #ifdef SENDSPIN_ENABLE
 	if ((section == "") || (section == "sendspin")) {
 		JsonObject sendspinObj = obj["sendspin"].to<JsonObject>();
+		sendspinObj["enabled"] = Sendspin_GetEnabled();
 		sendspinObj["unpairedAccess"] = Sendspin_GetUnpairedAccess();
+	#ifdef NEOPIXEL_ENABLE
+		sendspinObj["ledMode"] = static_cast<uint8_t>(Sendspin_GetLedMode());
+	#endif
 	}
 #endif
 }
@@ -3336,6 +3343,7 @@ static void handleSendspinStatusRequest(AsyncWebServerRequest *request) {
 
 	AsyncJsonResponse *response = new AsyncJsonResponse(false);
 	JsonObject object = response->getRoot();
+	object["enabled"] = sendspin.enabled;
 	object["running"] = sendspin.running;
 	object["connected"] = sendspin.connected;
 	object["paired"] = sendspin.paired;

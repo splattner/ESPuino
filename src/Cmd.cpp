@@ -11,10 +11,21 @@
 #include "Log.h"
 #include "Mqtt.h"
 #include "Queues.h"
+#include "Sendspin.h"
 #include "System.h"
 #include "Wlan.h"
 
 #include <algorithm>
+
+// Track-based sleep modes need something playing: a local playlist, or a Sendspin stream
+static bool Cmd_HasPlayback(void) {
+#ifdef SENDSPIN_ENABLE
+	if (Sendspin_IsSource()) {
+		return true;
+	}
+#endif
+	return gPlayProperties.playMode != NO_PLAYLIST;
+}
 
 static void Cmd_HandleSleepAction(bool enable, const char *enLogMsg, const char *enMqttMsg) {
 	System_SetNightmode(enable);
@@ -92,7 +103,7 @@ void Cmd_Action(const uint16_t mod) {
 		}
 
 		case CMD_SLEEP_AFTER_END_OF_TRACK: { // Puts uC to sleep after end of current track
-			if (gPlayProperties.playMode == NO_PLAYLIST) {
+			if (!Cmd_HasPlayback()) {
 				Log_Println(modificatorNotallowedWhenIdle, LOGLEVEL_NOTICE);
 				System_IndicateError();
 				return;
@@ -108,7 +119,7 @@ void Cmd_Action(const uint16_t mod) {
 		}
 
 		case CMD_SLEEP_AFTER_END_OF_PLAYLIST: { // Puts uC to sleep after end of whole playlist (can take a while :->)
-			if (gPlayProperties.playMode == NO_PLAYLIST) {
+			if (!Cmd_HasPlayback()) {
 				Log_Println(modificatorNotallowedWhenIdle, LOGLEVEL_NOTICE);
 				System_IndicateError();
 				return;
@@ -123,6 +134,17 @@ void Cmd_Action(const uint16_t mod) {
 		}
 
 		case CMD_SLEEP_AFTER_5_TRACKS: {
+#ifdef SENDSPIN_ENABLE
+			if (Sendspin_IsSource()) {
+				// The stream's queue length is unknown; Sendspin counts 5 track changes from now
+				gPlayProperties.sleepAfterCurrentTrack = false;
+				gPlayProperties.sleepAfterPlaylist = false;
+				gPlayProperties.playUntilTrackNumber = (gPlayProperties.playUntilTrackNumber > 0) ? 0 : gPlayProperties.currentTrackNumber + 5;
+				Cmd_HandleSleepAction(gPlayProperties.playUntilTrackNumber > 0, sleepTimerEO5, "EO5T");
+				System_IndicateOk();
+				break;
+			}
+#endif
 			if (gPlayProperties.playMode == NO_PLAYLIST || !gPlayProperties.playlist) {
 				Log_Println(modificatorNotallowedWhenIdle, LOGLEVEL_NOTICE);
 				System_IndicateError();

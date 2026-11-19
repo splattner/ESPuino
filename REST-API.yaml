@@ -769,9 +769,12 @@ paths:
                 required:
                   - running
                 properties:
+                  enabled:
+                    type: boolean
+                    description: "\"Sendspin enabled\" setting the device booted with (a changed setting applies after a restart)."
                   running:
                     type: boolean
-                    description: "Client started (normal operation mode only)."
+                    description: "Client started (enabled, normal operation mode only)."
                   connected:
                     type: boolean
                   paired:

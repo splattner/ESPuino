@@ -538,7 +538,8 @@
 			"connectedPaired": "Connected to {{server}} (paired)",
 			"connectedUnpaired": "Connected to {{server}} (not paired)",
 			"playing": "Playing",
-			"paused": "Paused"
+			"paused": "Paused",
+			"disabled": "Sendspin is disabled (see the settings below)"
 		},
 		"pairing": {
 			"title": "Pairing",
@@ -552,7 +553,14 @@
 			"title": "Sendspin settings",
 			"unpaired": "Allow unpaired access",
 			"unpairedExp": "When enabled, any Sendspin server on your network may play on this ESPuino without pairing first. Leave it off unless you trust everyone on your network.",
-			"save": "Save Sendspin settings"
+			"save": "Save Sendspin settings",
+			"enabled": "Enable Sendspin receiver",
+			"enabledExp": "Lets Sendspin servers such as Music Assistant play on this ESPuino. When disabled, the receiver isn’t started and uses no memory. Takes effect after a restart.",
+			"restartRequired": "Saved. Restart ESPuino to apply.",
+			"ledMode": "LED ring while streaming",
+			"ledModeExp": "What the LED ring shows while a Sendspin stream plays. Spectrum needs a server that sends visualizer data; otherwise the ring shows the track progress.",
+			"ledModeProgress": "Track progress",
+			"ledModeSpectrum": "Spectrum (colors from the album art)"
 		}
 	},
 	"general": {

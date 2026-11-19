@@ -59,7 +59,9 @@ web interface while manual input is possible (but usually unnecessary). When the
 again, ESPuino loads the mapping and starts the desired playback. Present a different RFID tag and
 the playback associated with that tag starts. In addition to audio files from the local microSD
 card, web streams can be played, too. In Bluetooth mode you can also stream to the ESPuino from
-your phone using [A2DP](https://de.wikipedia.org/wiki/A2DP), for example.
+your phone using [A2DP](https://de.wikipedia.org/wiki/A2DP), for example. And via
+[Sendspin](docs/sendspin.md), [Music Assistant](https://www.music-assistant.io/) can play on ESPuino
+like on any other speaker, in sync with other speakers.
 
 Further control elements on ESPuino are buttons and a [rotary encoder](https://forum.espuino.de/t/drehencoder-by-espuino/2414).
 Buttons can be assigned dozens of different actions via the web interface — even double assignments (short
@@ -246,6 +248,14 @@ speakers. This mode can be enabled/disabled via a RFID modification card or by a
 `CMD_TOGGLE_BLUETOOTH_SOURCE_MODE` to a button (or multi-button). Applying this will restart ESPuino
 immediately. Activated Bluetooth is indicated by four slow rotating _blue-violet_ LEDs. After the
 Bluetooth headset is connected LEDs turn to blue.
+
+## Sendspin (Music Assistant)
+
+ESPuino can be a [Sendspin](https://www.sendspin-audio.com/) speaker: a Sendspin server such as
+[Music Assistant](https://www.music-assistant.io/) streams to it, in sync with other speakers. It runs
+next to normal operation: a stream from the server pauses local playback, and a card or local
+playback takes the speaker back. Needs a board with PSRAM and 16 MB flash. Pair it with the
+token shown in the web interface's Sendspin tab. Details: [docs/sendspin.md](docs/sendspin.md).
 
 ## Port expander (for developers)
 
